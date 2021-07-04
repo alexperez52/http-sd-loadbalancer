@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/http-sd-loadbalancer/targetdiscovery"
+
 	"github.com/gorilla/mux"
 	"github.com/prometheus/common/model"
 )
@@ -86,6 +88,13 @@ var displayData = make(map[string]LinkLabel) // This is for the DisplayAll func
 var displayData2 = make(map[string]CollectorJson) // This is for the DisplayCollectorMapping func
 
 func main() {
+
+	// TODO: Use service discovery instead of mock data && reformat structs for better performance / cleaner code
+	targets, err := targetdiscovery.TargetDiscovery()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(targets)
 	InitializeCollectors()
 	UpdateTargetSet()
 

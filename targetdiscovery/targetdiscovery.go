@@ -1,4 +1,4 @@
-package main
+package targetdiscovery
 
 import (
 	"context"
@@ -341,12 +341,4 @@ func TargetDiscovery() ([]TargetMapping, error) {
 	}
 
 	return targets, nil
-}
-
-func main() {
-	targets, err := TargetDiscovery()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(targets)
 }
