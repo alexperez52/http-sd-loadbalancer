@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/http-sd-loadbalancer/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -29,27 +29,9 @@ import (
 )
 
 var (
-	mapping = map[string]interface{}{
-		"file": file.SDConfig{},
-	}
+	// ErrCreateManager represents an error in creating a service discovery manager.
+	ErrCreateManager = errors.New("couldn't create manager")
 )
-
-var (
-	// ErrInvalidLBYAML represents an error in the format of the original YAML configuration file.
-	ErrInvalidLBYAML = errors.New("couldn't parse the loadbalancer configuration")
-	// ErrInvalidLBFile represents an error in reading the original YAML configuration file.
-	ErrInvalidLBFile = errors.New("couldn't read the loadbalancer configuration file")
-)
-
-type Config struct {
-	Mode          string       `yaml:"mode"`
-	LabelSelector string       `yaml:"label_selector"`
-	Config        ScrapeConfig `yaml:"config"`
-}
-
-type ScrapeConfig struct {
-	ScrapeConfigs []map[string]interface{} `yaml:"scrape_configs"`
-}
 
 type TargetGroup struct {
 	Targets []string
@@ -59,6 +41,12 @@ type TargetGroup struct {
 type TargetMapping struct {
 	JobName     string
 	TargetGroup TargetGroup
+}
+
+type TargetData struct {
+	JobName string
+	Target  string
+	Labels  model.LabelSet
 }
 
 func Run(discoveryManager *discovery.Manager) error {
@@ -73,9 +61,8 @@ func getTargets(discoveryManager *discovery.Manager) ([]TargetMapping, error) {
 	var targets = []TargetMapping{}
 
 	for jobName, tgs := range tsets {
-		var targetGroup = TargetGroup{}
 		for _, target := range tgs {
-
+			var targetGroup = TargetGroup{}
 			targetInterface, err := target.MarshalYAML()
 			if err != nil {
 				return nil, err
@@ -96,28 +83,13 @@ func getTargets(discoveryManager *discovery.Manager) ([]TargetMapping, error) {
 	return targets, nil
 }
 
-func unmarshall(filePath string, cfg *Config) error {
-	yamlFile, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return ErrInvalidLBFile
-	}
-
-	err = yaml.UnmarshalStrict(yamlFile, cfg)
-	if err != nil {
-		return ErrInvalidLBYAML
-	}
-	return nil
-}
-
-func TargetDiscovery() ([]TargetMapping, error) {
-	var cfg = Config{}
-
-	if err := unmarshall("test.yaml", &cfg); err != nil {
-		fmt.Println(err)
-	}
-
+func NewManager() *discovery.Manager {
 	discoveryCtx, _ := context.WithCancel(context.Background())
 	discoveryManager := discovery.NewManager(discoveryCtx, log.NewNopLogger())
+	return discoveryManager
+}
+
+func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMapping, error) {
 	discoveryCfg := make(map[string]discovery.Configs)
 	discoveryConfigs := discovery.Configs{}
 
@@ -341,4 +313,17 @@ func TargetDiscovery() ([]TargetMapping, error) {
 	}
 
 	return targets, nil
+}
+
+func GetTargetList(targetMapping []TargetMapping) []TargetData {
+	targetDataList := []TargetData{}
+
+	for _, targetsInfo := range targetMapping {
+		targetsList := targetsInfo.TargetGroup.Targets
+		for _, target := range targetsList {
+			targetDataList = append(targetDataList, TargetData{JobName: targetsInfo.JobName, Target: target, Labels: targetsInfo.TargetGroup.Labels})
+		}
+	}
+
+	return targetDataList
 }

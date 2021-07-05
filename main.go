@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
 
-	"github.com/http-sd-loadbalancer/targetdiscovery"
+	"github.com/http-sd-loadbalancer/config"
+	lbdiscovery "github.com/http-sd-loadbalancer/discovery"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/common/model"
@@ -33,13 +35,15 @@ type LinkLabel struct {
 	Link string `json:"_link"`
 }
 
-type Targetgroup struct {
-	Targets []string
+type TargetData struct {
+	JobName string
+	Target  string
 	Labels  model.LabelSet
 }
+
 type CollectorJson struct {
-	Link string      `json:"_link"`
-	Jobs Targetgroup `json:"targets"`
+	Link string                  `json:"_link"`
+	Jobs lbdiscovery.TargetGroup `json:"targets"`
 }
 
 // autoInc creates increasing id signatures: Ex -> 0, 1, 2, 3 when used 4 times
@@ -59,6 +63,13 @@ func (a *autoInc) ID() (id int) {
 
 var ai autoInc
 
+var (
+	// ErrInvalidLBYAML represents an error in the format of the original YAML configuration file.
+	ErrInvalidLBYAML = errors.New("couldn't parse the loadbalancer configuration")
+	// ErrInvalidLBFile represents an error in reading the original YAML configuration file.
+	ErrInvalidLBFile = errors.New("couldn't read the loadbalancer configuration file")
+)
+
 // Next will hold the next collector pointer to be used when adding a new job (Uses least connection to be determined)
 type Next struct {
 	nextCollector *Collector
@@ -77,7 +88,7 @@ var collectors = []string{"collector-1", "collector-2", "collector-3", "collecto
 
 // -------------------------- End Mock Data --------------------------------
 
-var targMap = make(map[int]targetdiscovery.TargetMapping)
+var targMap = make(map[int]lbdiscovery.TargetMapping)
 
 var targetSet = make(map[string]struct{}) //set of targets - periodically updated // Once configured it will be updated with service discovery
 
@@ -92,20 +103,25 @@ var displayData2 = make(map[string]CollectorJson) // This is for the DisplayColl
 func main() {
 
 	// TODO: Use service discovery instead of mock data && reformat structs for better performance / cleaner code
-	tars, err := targetdiscovery.TargetDiscovery()
+	// Load the ConfigMap
+	var cfg = config.Load()
+
+	// Create new disocvery manager
+	discoveryManager := lbdiscovery.NewManager()
+
+	// Obtain TargetGroups using service discovery
+	targetMapping, err := lbdiscovery.Get(discoveryManager, cfg)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	for idx, v := range tars {
-		targMap[idx] = v
+	// Format TargetGroups into list of targets
+	targetList := lbdiscovery.GetTargetList(targetMapping)
+	for _, targetInfo := range targetList {
+		fmt.Println(targetInfo.JobName, " ", targetInfo.Target, " ", targetInfo.Labels)
+		fmt.Println()
 	}
 
-	for idx, v := range targMap {
-
-		fmt.Println(idx, v)
-
-	}
 	// InitializeCollectors()
 	// UpdateTargetSet()
 
@@ -143,7 +159,7 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 				for i := range v.jobs {
 					jobsArr = append(jobsArr, i)
 				}
-				displayData2[v.name] = CollectorJson{Link: "/jobs/" + v.jobName + "/targets" + "?collector_id=" + v.name, Jobs: Targetgroup{Targets: jobsArr, Labels: model.LabelSet{
+				displayData2[v.name] = CollectorJson{Link: "/jobs/" + v.jobName + "/targets" + "?collector_id=" + v.name, Jobs: lbdiscovery.TargetGroup{Targets: jobsArr, Labels: model.LabelSet{
 					"__meta_label_datacenter": "dc3",
 				}}}
 
@@ -153,7 +169,7 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(displayData2)
 
 	} else {
-		var tgs []Targetgroup
+		var tgs []lbdiscovery.TargetGroup
 
 		for _, v := range collectorMap {
 			if v.name == q[0] {
@@ -161,7 +177,7 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 				for i := range v.jobs {
 					jobsArr = append(jobsArr, i)
 				}
-				tgs = []Targetgroup{
+				tgs = []lbdiscovery.TargetGroup{
 					{
 						Targets: jobsArr,
 						Labels: model.LabelSet{
