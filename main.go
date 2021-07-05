@@ -77,6 +77,8 @@ var collectors = []string{"collector-1", "collector-2", "collector-3", "collecto
 
 // -------------------------- End Mock Data --------------------------------
 
+var targMap = make(map[int]targetdiscovery.TargetMapping)
+
 var targetSet = make(map[string]struct{}) //set of targets - periodically updated // Once configured it will be updated with service discovery
 
 var targetMap = make(map[string]string) //key=target, value=collectorName
@@ -90,24 +92,33 @@ var displayData2 = make(map[string]CollectorJson) // This is for the DisplayColl
 func main() {
 
 	// TODO: Use service discovery instead of mock data && reformat structs for better performance / cleaner code
-	targets, err := targetdiscovery.TargetDiscovery()
+	tars, err := targetdiscovery.TargetDiscovery()
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(targets)
-	InitializeCollectors()
-	UpdateTargetSet()
 
-	// The following 2 function calls will reconcile the scrape targets.
-	// RemoveOutdatedJobs will compare internal map to the dynamically changing targetMap to remove any targets that are no longer being used
-	// AddUpdatedJobs will compare internal map to the dynamically changing targetMap to add any new targets
-	RemoveOutdatedJobs()
-	AddUpdatedJobs()
+	for idx, v := range tars {
+		targMap[idx] = v
+	}
 
-	router := mux.NewRouter()
-	router.HandleFunc("/jobs", DisplayAll).Methods("GET")
-	router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
-	http.ListenAndServe(":3030", router)
+	for idx, v := range targMap {
+
+		fmt.Println(idx, v)
+
+	}
+	// InitializeCollectors()
+	// UpdateTargetSet()
+
+	// // The following 2 function calls will reconcile the scrape targets.
+	// // RemoveOutdatedJobs will compare internal map to the dynamically changing targetMap to remove any targets that are no longer being used
+	// // AddUpdatedJobs will compare internal map to the dynamically changing targetMap to add any new targets
+	// RemoveOutdatedJobs()
+	// AddUpdatedJobs()
+
+	// router := mux.NewRouter()
+	// router.HandleFunc("/jobs", DisplayAll).Methods("GET")
+	// router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
+	// http.ListenAndServe(":3030", router)
 }
 
 func DisplayAll(w http.ResponseWriter, r *http.Request) {
