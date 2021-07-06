@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"os"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -20,8 +21,7 @@ func Get(ctx context.Context, LabelSelector map[string]string) ([]string, error)
 	}
 
 	collectors := []string{}
-	// Namespace will be taken from env passed to the pod
-	pods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods(os.Getenv("OTEL_NAMESPACE")).List(context.TODO(), metav1.ListOptions{})
 	for i := range pods.Items {
 		collectors = append(collectors, pods.Items[i].Name)
 	}
