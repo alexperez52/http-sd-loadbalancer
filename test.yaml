@@ -1,5 +1,7 @@
 mode: LeastConnection
-label_selector: otel-collector
+label_selector:
+  app.kubernetes.io/instance: default.test
+  app.kubernetes.io/managed-by: opentelemetry-operator
 config:
   scrape_configs:
     - job_name: prometheus

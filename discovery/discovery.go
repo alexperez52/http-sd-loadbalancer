@@ -327,3 +327,12 @@ func GetTargetList(targetMapping []TargetMapping) []TargetData {
 
 	return targetDataList
 }
+
+func Watch(discoveryManager *discovery.Manager, targetList *[]TargetData) {
+	targetMapping, err := getTargets(discoveryManager)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	*targetList = GetTargetList(targetMapping)
+}

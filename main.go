@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/go-co-op/gocron"
+	"github.com/http-sd-loadbalancer/collector"
 	"github.com/http-sd-loadbalancer/config"
 	lbdiscovery "github.com/http-sd-loadbalancer/discovery"
+	"github.com/prometheus/common/model"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/common/model"
 )
 
 /*
@@ -31,37 +34,25 @@ type LinkLabel struct {
 	Link string `json:"_link"`
 }
 
-type TargetData struct {
-	JobName string
-	Target  string
-	Labels  model.LabelSet
-}
-
 type CollectorJson struct {
 	Link string                    `json:"_link"`
 	Jobs []lbdiscovery.TargetGroup `json:"targets"`
 }
-
-var (
-	// ErrInvalidLBYAML represents an error in the format of the original YAML configuration file.
-	ErrInvalidLBYAML = errors.New("couldn't parse the loadbalancer configuration")
-	// ErrInvalidLBFile represents an error in reading the original YAML configuration file.
-	ErrInvalidLBFile = errors.New("couldn't read the loadbalancer configuration file")
-)
 
 // Next will hold the next collector pointer to be used when adding a new job (Uses least connection to be determined)
 type Next struct {
 	nextCollector *Collector
 }
 
+type TargetItem struct {
+	JobName      string
+	Link         LinkLabel
+	TargetUrl    string
+	Label        model.LabelSet
+	CollectorPtr *Collector
+}
+
 var next = Next{}
-
-// -------------------------- Mock Data ------------------------------------
-// Mock list of targets
-
-var collectors = []string{"collector-1", "collector-2", "collector-3"}
-
-// -------------------------- End Mock Data --------------------------------
 
 var targetSet = make(map[string]lbdiscovery.TargetData) //set of targets - periodically updated // Once configured it will be updated with service discovery
 
@@ -73,37 +64,38 @@ var displayData = make(map[string]LinkLabel) // This is for the DisplayAll func
 
 var displayData2 = make(map[string]CollectorJson) // This is for the DisplayCollectorMapping func
 
-var targetList []lbdiscovery.TargetData
 var targetItemMap = make(map[string]*TargetItem) // key=collectorName, value=Collector{}
-
-type TargetItem struct {
-	JobName      string
-	Link         LinkLabel
-	TargetUrl    string
-	Label        model.LabelSet
-	CollectorPtr *Collector
-}
 
 func main() {
 
-	// TODO: Use service discovery instead of mock data && reformat structs for better performance / cleaner code
-	// Load the ConfigMap
-	var cfg = config.Load()
-
+	// TODO: Reformat structs for better performance / cleaner code
 	// Create new disocvery manager
 	discoveryManager := lbdiscovery.NewManager()
 
-	// Obtain TargetGroups using service discovery
+	// Load the ConfigMap
+	var cfg = config.Load()
+
+	collectors, err := collector.Get(context.Background(), cfg.LabelSelector)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// Obtain initial TargetGroups using service discovery
 	targetMapping, err := lbdiscovery.Get(discoveryManager, cfg)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	// Format TargetGroups into list of targets
-	targetList = lbdiscovery.GetTargetList(targetMapping)
+	// Format initial TargetGroups into list of targets
+	targetList := lbdiscovery.GetTargetList(targetMapping)
 
-	InitializeCollectors()
-	UpdateTargetSet()
+	// Start cronjob to to run service dicsovery at fixed intervals (30s)
+	s := gocron.NewScheduler(time.UTC)
+	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
+	s.StartAsync()
+
+	InitializeCollectors(collectors)
+	UpdateTargetSet(targetList)
 
 	// The following 2 function calls will reconcile the scrape targets.
 	// RemoveOutdatedJobs will compare internal map to the dynamically changing targetMap to remove any targets that are no longer being used
@@ -188,7 +180,7 @@ func SetNextCollector() {
 
 // Initlialize the set of targets which will be used to compare the targets in use by the collector instances
 // This function will periodically be called when changes are made in the target discovery
-func UpdateTargetSet() {
+func UpdateTargetSet(targetList []lbdiscovery.TargetData) {
 	for _, i := range targetList {
 		targetSet[i.JobName+i.Target] = i
 	}
@@ -196,7 +188,7 @@ func UpdateTargetSet() {
 
 // Initalize our set of collectors with key=collectorName, value=Collector object
 // Collector instances are stable. Once initiated & allocated, these should not change. Only their jobs will change
-func InitializeCollectors() {
+func InitializeCollectors(collectors []string) {
 	for _, i := range collectors {
 		collector := Collector{name: i, numTargs: 0}
 		colMap[i] = &collector

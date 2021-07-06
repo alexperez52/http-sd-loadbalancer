@@ -20,9 +20,9 @@ var (
 )
 
 type Config struct {
-	Mode          string       `yaml:"mode"`
-	LabelSelector string       `yaml:"label_selector"`
-	Config        ScrapeConfig `yaml:"config"`
+	Mode          string            `yaml:"mode"`
+	LabelSelector map[string]string `yaml:"label_selector,omitempty"`
+	Config        ScrapeConfig      `yaml:"config"`
 }
 
 type ScrapeConfig struct {
