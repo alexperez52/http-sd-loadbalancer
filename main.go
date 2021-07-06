@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
-	"sync"
 
 	"github.com/http-sd-loadbalancer/config"
 	lbdiscovery "github.com/http-sd-loadbalancer/discovery"
@@ -22,12 +20,10 @@ import (
 */
 // Create a struct that holds collector - and jobs for that collector
 // This struct will be parsed into endpoint with collector and jobs info
+
 type Collector struct {
-	numJobs int
-	jobs    map[string]struct{}
-	name    string
-	jobName string
-	link    string
+	name     string
+	numTargs int
 }
 
 // Label to display on the http server
@@ -42,26 +38,9 @@ type TargetData struct {
 }
 
 type CollectorJson struct {
-	Link string                  `json:"_link"`
-	Jobs lbdiscovery.TargetGroup `json:"targets"`
+	Link string                    `json:"_link"`
+	Jobs []lbdiscovery.TargetGroup `json:"targets"`
 }
-
-// autoInc creates increasing id signatures: Ex -> 0, 1, 2, 3 when used 4 times
-type autoInc struct {
-	sync.Mutex
-	id int
-}
-
-// belongs to autoInc
-func (a *autoInc) ID() (id int) {
-	a.Lock()
-	defer a.Unlock()
-	id = a.id
-	a.id++
-	return
-}
-
-var ai autoInc
 
 var (
 	// ErrInvalidLBYAML represents an error in the format of the original YAML configuration file.
@@ -79,26 +58,31 @@ var next = Next{}
 
 // -------------------------- Mock Data ------------------------------------
 // Mock list of targets
-var targets = []string{"localhost:0001", "localhost:0002", "localhost:0003", "localhost:0004",
-	"localhost:0005", "localhost:0006", "localhost:0007", "localhost:0008", "localhost:0009", "localhost:0010",
-	"localhost:0011", "localhost:0012", "localhost:0013", "localhost:0014", "localhost:0015", "localhost:0016", "localhost:0017"}
 
-// Mock list of collector pod names
-var collectors = []string{"collector-1", "collector-2", "collector-3", "collector-4"}
+var collectors = []string{"collector-1", "collector-2", "collector-3"}
 
 // -------------------------- End Mock Data --------------------------------
 
-var targMap = make(map[int]lbdiscovery.TargetMapping)
+var targetSet = make(map[string]lbdiscovery.TargetData) //set of targets - periodically updated // Once configured it will be updated with service discovery
 
-var targetSet = make(map[string]struct{}) //set of targets - periodically updated // Once configured it will be updated with service discovery
+var targetMap = make(map[string]lbdiscovery.TargetData) //key=target, value=collectorName
 
-var targetMap = make(map[string]string) //key=target, value=collectorName
-
-var collectorMap = make(map[string]*Collector) // key=collectorName, value=Collector{}
+var colMap = make(map[string]*Collector) // key=collectorName, value=Collector{}
 
 var displayData = make(map[string]LinkLabel) // This is for the DisplayAll func
 
 var displayData2 = make(map[string]CollectorJson) // This is for the DisplayCollectorMapping func
+
+var targetList []lbdiscovery.TargetData
+var targetItemMap = make(map[string]*TargetItem) // key=collectorName, value=Collector{}
+
+type TargetItem struct {
+	JobName      string
+	Link         LinkLabel
+	TargetUrl    string
+	Label        model.LabelSet
+	CollectorPtr *Collector
+}
 
 func main() {
 
@@ -116,30 +100,26 @@ func main() {
 	}
 
 	// Format TargetGroups into list of targets
-	targetList := lbdiscovery.GetTargetList(targetMapping)
-	for _, targetInfo := range targetList {
-		fmt.Println(targetInfo.JobName, " ", targetInfo.Target, " ", targetInfo.Labels)
-		fmt.Println()
-	}
+	targetList = lbdiscovery.GetTargetList(targetMapping)
 
-	// InitializeCollectors()
-	// UpdateTargetSet()
+	InitializeCollectors()
+	UpdateTargetSet()
 
-	// // The following 2 function calls will reconcile the scrape targets.
-	// // RemoveOutdatedJobs will compare internal map to the dynamically changing targetMap to remove any targets that are no longer being used
-	// // AddUpdatedJobs will compare internal map to the dynamically changing targetMap to add any new targets
-	// RemoveOutdatedJobs()
-	// AddUpdatedJobs()
-
-	// router := mux.NewRouter()
-	// router.HandleFunc("/jobs", DisplayAll).Methods("GET")
-	// router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
-	// http.ListenAndServe(":3030", router)
+	// The following 2 function calls will reconcile the scrape targets.
+	// RemoveOutdatedJobs will compare internal map to the dynamically changing targetMap to remove any targets that are no longer being used
+	// AddUpdatedJobs will compare internal map to the dynamically changing targetMap to add any new targets
+	RemoveOutdatedJobs()
+	AddUpdatedJobs()
+	router := mux.NewRouter()
+	router.HandleFunc("/jobs", DisplayAll).Methods("GET")
+	router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
+	http.ListenAndServe(":3030", router)
+	fmt.Println("Server started...")
 }
 
 func DisplayAll(w http.ResponseWriter, r *http.Request) {
-	for _, v := range collectorMap {
-		displayData[v.jobName] = LinkLabel{v.link}
+	for _, v := range targetItemMap {
+		displayData[v.JobName] = LinkLabel{v.Link.Link}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(displayData)
@@ -151,17 +131,28 @@ func DisplayAll(w http.ResponseWriter, r *http.Request) {
 func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()["collector_id"]
 
+	var compareMap = make(map[string][]TargetItem)
+	for _, v := range targetItemMap {
+		compareMap[v.CollectorPtr.name+v.JobName] = append(compareMap[v.CollectorPtr.name+v.JobName], *v)
+	}
+
 	if len(q) == 0 {
 		params := mux.Vars(r)
-		for _, v := range collectorMap {
-			if v.jobName == params["job_id"] {
-				var jobsArr []string
-				for i := range v.jobs {
-					jobsArr = append(jobsArr, i)
+		for _, v := range targetItemMap {
+			if v.JobName == params["job_id"] {
+				for k := range displayData {
+					delete(displayData, k)
 				}
-				displayData2[v.name] = CollectorJson{Link: "/jobs/" + v.jobName + "/targets" + "?collector_id=" + v.name, Jobs: lbdiscovery.TargetGroup{Targets: jobsArr, Labels: model.LabelSet{
-					"__meta_label_datacenter": "dc3",
-				}}}
+				var jobsArr []TargetItem
+				jobsArr = append(jobsArr, compareMap[v.CollectorPtr.name+v.JobName]...)
+
+				var targetGroupList []lbdiscovery.TargetGroup
+				for _, v := range jobsArr {
+					targetGroupList = append(targetGroupList, lbdiscovery.TargetGroup{Targets: []string{v.TargetUrl}, Labels: v.Label})
+
+				}
+
+				displayData2[v.CollectorPtr.name] = CollectorJson{Link: "/jobs/" + v.JobName + "/targets" + "?collector_id=" + v.CollectorPtr.name, Jobs: targetGroupList}
 
 			}
 		}
@@ -170,24 +161,17 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		var tgs []lbdiscovery.TargetGroup
-
-		for _, v := range collectorMap {
+		for _, v := range colMap {
 			if v.name == q[0] {
-				var jobsArr []string
-				for i := range v.jobs {
-					jobsArr = append(jobsArr, i)
-				}
-				tgs = []lbdiscovery.TargetGroup{
-					{
-						Targets: jobsArr,
-						Labels: model.LabelSet{
-							"__meta_label_datacenter": "dc3",
-						},
-					},
+				for _, targetItemArr := range compareMap {
+					for _, targetItem := range targetItemArr {
+						if targetItem.CollectorPtr.name == q[0] {
+							tgs = append(tgs, lbdiscovery.TargetGroup{Targets: []string{targetItem.TargetUrl}, Labels: targetItem.Label})
+						}
+					}
 				}
 			}
 		}
-		fmt.Print(q)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tgs)
 	}
@@ -195,76 +179,50 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 
 // Basic implementation of least connection algorithm - can be enhance or replaced by another delegation algorithm
 func SetNextCollector() {
-	for _, v := range collectorMap {
-		if v.numJobs < next.nextCollector.numJobs {
+	for _, v := range colMap {
+		if v.numTargs < next.nextCollector.numTargs {
 			next.nextCollector = v
 		}
-	}
-}
-
-// AddJob adds new jobs to the next pointed collector (Currently using least connection)
-func (c *Collector) AddJob(job string) {
-	SetNextCollector()
-	var exists = struct{}{}
-	c.jobs[job] = exists
-	c.numJobs++
-
-}
-
-// RemoveJob removes specified job
-func (c *Collector) RemoveJob(job string) {
-	if _, ok := c.jobs[job]; ok {
-		delete(c.jobs, job)
-		c.numJobs--
 	}
 }
 
 // Initlialize the set of targets which will be used to compare the targets in use by the collector instances
 // This function will periodically be called when changes are made in the target discovery
 func UpdateTargetSet() {
-	var exists = struct{}{}
-	for _, i := range targets {
-		targetSet[i] = exists
+	for _, i := range targetList {
+		targetSet[i.JobName+i.Target] = i
 	}
 }
 
 // Initalize our set of collectors with key=collectorName, value=Collector object
 // Collector instances are stable. Once initiated & allocated, these should not change. Only their jobs will change
 func InitializeCollectors() {
-	for range collectors {
-		id := strconv.Itoa(ai.ID())
-		tempJobName := "job" + id
-		tempCollectorName := "collector-" + id
-		coll := Collector{
-			numJobs: 0,
-			jobs:    make(map[string]struct{}),
-			name:    tempCollectorName,
-			jobName: tempJobName,
-			link:    "/jobs/" + tempJobName + "/targets",
-		}
-		collectorMap[coll.name] = &coll
+	for _, i := range collectors {
+		collector := Collector{name: i, numTargs: 0}
+		colMap[i] = &collector
 	}
-	next.nextCollector = collectorMap[collectors[0]]
+	next.nextCollector = colMap[collectors[0]]
 }
 
 //Remove jobs from our struct that are no longer in the new set
 func RemoveOutdatedJobs() {
-	for k, v := range targetMap {
+	for k := range targetMap {
 		if _, ok := targetSet[k]; !ok {
 			delete(targetMap, k)
-			collectorMap[v].RemoveJob(k)
+			colMap[targetItemMap[k].CollectorPtr.name].numTargs--
+			delete(targetItemMap, k)
 		}
 	}
 }
 
 //Add jobs that were added into our struct
 func AddUpdatedJobs() {
-	for i := range targetSet {
-		for _, v := range collectorMap {
-			if _, ok := v.jobs[i]; !ok {
-				next.nextCollector.AddJob(i)
-				break
-			}
+	for k, v := range targetSet {
+		if _, ok := targetItemMap[k]; !ok {
+			SetNextCollector()
+			targetItem := TargetItem{JobName: v.JobName, Link: LinkLabel{"/jobs/" + v.JobName + "/targets"}, TargetUrl: v.Target, Label: v.Labels, CollectorPtr: next.nextCollector}
+			next.nextCollector.numTargs++
+			targetItemMap[v.JobName+v.Target] = &targetItem
 		}
 	}
 }
