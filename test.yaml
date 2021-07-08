@@ -4,7 +4,7 @@ label_selector:
   app.kubernetes.io/managed-by: opentelemetry-operator
 config:
   scrape_configs:
-    - job_name: prometheus
+    - job_name: prometheusinternal
       honor_labels: true
 
       file_sd_configs:
@@ -14,20 +14,19 @@ config:
             - single/file.yml
           refresh_interval: 10m
         - files:
-            - file_sd_test.yaml
+            - file_sd_test_1.yaml
 
       static_configs:
-        - targets: ["localhost:9090", "localhost:9191"]
+        - targets: ["external.domain1", "external.domain2"]
           labels:
-            my: label
-            your: label
+            my: label1
+            your: label1
 
       relabel_configs:
         - source_labels: [job, __meta_dns_name]
           regex: (.*)some-[regex]
           target_label: job
           replacement: foo-${1}
-          # action defaults to 'replace'
         - source_labels: [abc]
           target_label: cde
         - replacement: static
@@ -36,7 +35,7 @@ config:
           replacement: static
           target_label: abc
 
-    - job_name: prometheus2
+    - job_name: prometheusexternal
       honor_labels: true
 
       file_sd_configs:
@@ -46,20 +45,19 @@ config:
             - single/file.yml
           refresh_interval: 10m
         - files:
-            - file_sd_test.yaml
+            - file_sd_test_2.yaml
 
       static_configs:
-        - targets: ["localhost:1090", "localhost:1191"]
+        - targets: ["inernal.domain1", "internal.domain2"]
           labels:
-            my: label
-            your: label
+            my: label2
+            your: label2
 
       relabel_configs:
         - source_labels: [job, __meta_dns_name]
           regex: (.*)some-[regex]
           target_label: job
           replacement: foo-${1}
-          # action defaults to 'replace'
         - source_labels: [abc]
           target_label: cde
         - replacement: static

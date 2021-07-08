@@ -1,0 +1,5 @@
+- targets: ['file2.domain:9290', 'file2.domain:4343']
+  labels:
+    foo2: bar2
+
+- targets: ['file2.domain:6666']

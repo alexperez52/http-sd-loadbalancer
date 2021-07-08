@@ -1,5 +1,0 @@
-- targets: ['localhost:9290', 'example.org:4343']
-  labels:
-    foo: bar
-
-- targets: ['my.domain']
