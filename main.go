@@ -88,6 +88,9 @@ func main() {
 
 	// Format initial TargetGroups into list of targets
 	targetList := lbdiscovery.GetTargetList(targetMapping)
+	for _, tt := range targetList {
+		fmt.Println(tt.JobName, ' ', tt.Target, ' ', tt.Labels)
+	}
 
 	// Start cronjob to to run service dicsovery at fixed intervals (30s)
 	s := gocron.NewScheduler(time.UTC)

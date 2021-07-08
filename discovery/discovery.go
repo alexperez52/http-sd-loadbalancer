@@ -91,9 +91,9 @@ func NewManager() *discovery.Manager {
 
 func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMapping, error) {
 	discoveryCfg := make(map[string]discovery.Configs)
-	discoveryConfigs := discovery.Configs{}
 
 	for _, scrapeConfig := range cfg.Config.ScrapeConfigs {
+		discoveryConfigs := discovery.Configs{}
 		for name, sd := range scrapeConfig {
 			if strings.HasSuffix(name, "_sd_configs") {
 				sdYAML, _ := yaml.Marshal(sd)

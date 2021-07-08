@@ -1,5 +1,5 @@
-- targets: ['file2.domain:9290', 'file2.domain:4343']
+- targets: ['servicexfile.domain:9290', 'servicexfile.domain:4343']
   labels:
     foo2: bar2
 
-- targets: ['file2.domain:6666']
+- targets: ['servicexfile.domain:6666']
