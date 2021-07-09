@@ -51,7 +51,7 @@ type TargetData struct {
 
 func Run(discoveryManager *discovery.Manager) error {
 	if err := discoveryManager.Run(); err != nil {
-		return fmt.Errorf("Discovery manager failed")
+		return fmt.Errorf("discovery manager failed")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling azure sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "consul_sd_configs":
@@ -113,7 +113,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling consul sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "digitalocean_sd_configs":
@@ -122,7 +122,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling digitalocean sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				// case "docker_sd_configs":
@@ -149,7 +149,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling dns sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				// case "ec2_sd_configs":
@@ -167,7 +167,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling openstack sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "file_sd_configs":
@@ -176,7 +176,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling file sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "gce_sd_configs":
@@ -185,7 +185,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling gce sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "hetzner_sd_configs":
@@ -194,7 +194,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling hetzner sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "http_sd_configs":
@@ -203,7 +203,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling http sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "kubernetes_sd_configs":
@@ -212,7 +212,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling kubernetes sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				// case "lightsail_sd_configs":
@@ -230,7 +230,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling linode sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "marathon_sd_configs":
@@ -239,7 +239,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling marathon sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				// case "nerve_sd_configs":
@@ -266,7 +266,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling triton sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "eureka_sd_configs":
@@ -275,7 +275,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling eureka sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				case "scaleway_sd_configs":
@@ -284,7 +284,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 					if err != nil {
 						fmt.Printf("error unmarshalling scaleway sd config: %s", err)
 					}
-					for index, _ := range sdConfig {
+					for index := range sdConfig {
 						discoveryConfigs = append(discoveryConfigs, &sdConfig[index])
 					}
 				}
