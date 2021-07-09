@@ -1,6 +1,8 @@
 package loadbalancer
 
 import (
+	"log"
+
 	lbdiscovery "github.com/http-sd-loadbalancer/discovery"
 	"github.com/prometheus/common/model"
 )
@@ -63,6 +65,12 @@ func (lb *LoadBalancer) SetNextCollector() {
 // Initlialize the set of targets which will be used to compare the targets in use by the collector instances
 // This function will periodically be called when changes are made in the target discovery
 func (lb *LoadBalancer) UpdateTargetSet(targetList []lbdiscovery.TargetData) {
+	// Dump old data
+	for k := range lb.TargetSet {
+		delete(lb.TargetSet, k)
+	}
+
+	// Set new data
 	for _, i := range targetList {
 		lb.TargetSet[i.JobName+i.Target] = i
 	}
@@ -71,6 +79,10 @@ func (lb *LoadBalancer) UpdateTargetSet(targetList []lbdiscovery.TargetData) {
 // Initalize our set of collectors with key=collectorName, value=Collector object
 // Collector instances are stable. Once initiated & allocated, these should not change. Only their jobs will change
 func (lb *LoadBalancer) InitializeCollectors(collectors []string) {
+	if len(collectors) == 0 {
+		log.Fatal("no collector instances present")
+	}
+
 	for _, i := range collectors {
 		collector := Collector{Name: i, NumTargs: 0}
 		lb.CollectorMap[i] = &collector
@@ -79,7 +91,7 @@ func (lb *LoadBalancer) InitializeCollectors(collectors []string) {
 }
 
 //Remove jobs from our struct that are no longer in the new set
-func (lb *LoadBalancer) RemoveOutdatedJobs() {
+func (lb *LoadBalancer) RemoveOutdatedTargets() {
 	for k := range lb.TargetMap {
 		if _, ok := lb.TargetSet[k]; !ok {
 			delete(lb.TargetMap, k)
@@ -90,10 +102,11 @@ func (lb *LoadBalancer) RemoveOutdatedJobs() {
 }
 
 //Add jobs that were added into our struct
-func (lb *LoadBalancer) AddUpdatedJobs() {
+func (lb *LoadBalancer) AddUpdatedTargets() {
 	for k, v := range lb.TargetSet {
 		if _, ok := lb.TargetItemMap[k]; !ok {
 			lb.SetNextCollector()
+			lb.TargetMap[k] = v
 			targetItem := TargetItem{JobName: v.JobName, Link: LinkLabel{"/jobs/" + v.JobName + "/targets"}, TargetUrl: v.Target, Label: v.Labels, CollectorPtr: lb.NextCol.NextCollector}
 			lb.NextCol.NextCollector.NumTargs++
 			lb.TargetItemMap[v.JobName+v.Target] = &targetItem
@@ -174,8 +187,8 @@ func SetupDisplayData(lb *LoadBalancer) map[string]LinkLabel {
 }
 
 func (lb *LoadBalancer) RefreshJobs() {
-	lb.RemoveOutdatedJobs()
-	lb.AddUpdatedJobs()
+	lb.RemoveOutdatedTargets()
+	lb.AddUpdatedTargets()
 }
 
 func Init() *LoadBalancer {

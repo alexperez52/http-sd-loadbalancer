@@ -20,7 +20,6 @@ var lb *loadbalancer.LoadBalancer
 
 func main() {
 
-	// TODO: Reformat structs for better performance / cleaner code
 	// Create new disocvery manager
 	discoveryManager := lbdiscovery.NewManager()
 
@@ -40,18 +39,19 @@ func main() {
 
 	// Format initial TargetGroups into list of targets
 	targetList := lbdiscovery.GetTargetList(targetMapping)
+	lb = loadbalancer.Init()
 
 	// Start cronjob to to run service dicsovery at fixed intervals (30s)
 	s := gocron.NewScheduler(time.UTC)
 	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
-	s.StartAsync()
 
-	lb = loadbalancer.Init()
+	s.StartAsync()
 
 	lb.InitializeCollectors(collectors)
 	lb.UpdateTargetSet(targetList)
 	lb.RefreshJobs()
 
+	// Starting server
 	fmt.Println("Server started...")
 	router := mux.NewRouter()
 	router.HandleFunc("/jobs", DisplayAll).Methods("GET")
@@ -59,6 +59,7 @@ func main() {
 	http.ListenAndServe(":3030", router)
 }
 
+// Exposes all current jobs with their corresponding targets link
 func DisplayAll(w http.ResponseWriter, r *http.Request) {
 
 	displayData := loadbalancer.SetupDisplayData(lb)
@@ -72,7 +73,6 @@ func DisplayAll(w http.ResponseWriter, r *http.Request) {
 // Otherwise it will jsut expose all collector's jobs
 func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()["collector_id"]
-
 	if len(q) == 0 {
 		params := mux.Vars(r)
 		targets := loadbalancer.SetupDisplayTargets(lb, params)
