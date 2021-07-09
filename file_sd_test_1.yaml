@@ -1,5 +1,5 @@
-- targets: ['promfile.domain:9290', 'promfile.domain:4343']
+- targets: ['promfile.domain:1001', 'promfile.domain:1002', 'promfile.domain:1003']
   labels:
     foo1: bar1
 
-- targets: ['promfile.domain:6666']
+- targets: ['promfile.domain:3000']

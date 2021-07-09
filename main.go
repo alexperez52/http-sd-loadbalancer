@@ -88,9 +88,6 @@ func main() {
 
 	// Format initial TargetGroups into list of targets
 	targetList := lbdiscovery.GetTargetList(targetMapping)
-	for _, tt := range targetList {
-		fmt.Println(tt.JobName, ' ', tt.Target, ' ', tt.Labels)
-	}
 
 	// Start cronjob to to run service dicsovery at fixed intervals (30s)
 	s := gocron.NewScheduler(time.UTC)
@@ -105,11 +102,12 @@ func main() {
 	// AddUpdatedJobs will compare internal map to the dynamically changing targetMap to add any new targets
 	RemoveOutdatedJobs()
 	AddUpdatedJobs()
+	fmt.Println("Server started...")
+
 	router := mux.NewRouter()
 	router.HandleFunc("/jobs", DisplayAll).Methods("GET")
 	router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
 	http.ListenAndServe(":3030", router)
-	fmt.Println("Server started...")
 }
 
 func DisplayAll(w http.ResponseWriter, r *http.Request) {
@@ -126,29 +124,39 @@ func DisplayAll(w http.ResponseWriter, r *http.Request) {
 func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()["collector_id"]
 
-	var compareMap = make(map[string][]TargetItem)
+	var compareMap = make(map[string][]TargetItem) // CollectorName+jobName -> TargetItem
 	for _, v := range targetItemMap {
 		compareMap[v.CollectorPtr.name+v.JobName] = append(compareMap[v.CollectorPtr.name+v.JobName], *v)
 	}
 
 	if len(q) == 0 {
 		params := mux.Vars(r)
-		for _, v := range targetItemMap {
-			if v.JobName == params["job_id"] {
-				for k := range displayData {
-					delete(displayData, k)
-				}
+		for k := range displayData2 {
+			delete(displayData2, k)
+		}
+
+		for _, job := range targetItemMap {
+			if job.JobName == params["job_id"] {
 				var jobsArr []TargetItem
-				jobsArr = append(jobsArr, compareMap[v.CollectorPtr.name+v.JobName]...)
+				jobsArr = append(jobsArr, compareMap[job.CollectorPtr.name+job.JobName]...)
 
 				var targetGroupList []lbdiscovery.TargetGroup
-				for _, v := range jobsArr {
-					targetGroupList = append(targetGroupList, lbdiscovery.TargetGroup{Targets: []string{v.TargetUrl}, Labels: v.Label})
+
+				trg := make(map[string][]TargetItem)
+				for _, m := range jobsArr {
+					trg[m.JobName+m.Label.String()] = append(trg[m.JobName+m.Label.String()], m)
+				}
+				ttt := make(map[string]model.LabelSet)
+				for _, l := range trg {
+					var arr []string
+					for _, r := range l {
+						ttt[r.TargetUrl] = r.Label
+						arr = append(arr, r.TargetUrl)
+					}
+					targetGroupList = append(targetGroupList, lbdiscovery.TargetGroup{Targets: arr, Labels: ttt[arr[0]]})
 
 				}
-
-				displayData2[v.CollectorPtr.name] = CollectorJson{Link: "/jobs/" + v.JobName + "/targets" + "?collector_id=" + v.CollectorPtr.name, Jobs: targetGroupList}
-
+				displayData2[job.CollectorPtr.name] = CollectorJson{Link: "/jobs/" + job.JobName + "/targets" + "?collector_id=" + job.CollectorPtr.name, Jobs: targetGroupList}
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -156,17 +164,25 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		var tgs []lbdiscovery.TargetGroup
+		tr := make(map[string][]string)
+		ttt := make(map[string]model.LabelSet)
 		for _, v := range colMap {
 			if v.name == q[0] {
 				for _, targetItemArr := range compareMap {
 					for _, targetItem := range targetItemArr {
 						if targetItem.CollectorPtr.name == q[0] {
-							tgs = append(tgs, lbdiscovery.TargetGroup{Targets: []string{targetItem.TargetUrl}, Labels: targetItem.Label})
+							tr[targetItem.Label.String()] = append(tr[targetItem.Label.String()], targetItem.TargetUrl)
+							ttt[targetItem.TargetUrl] = targetItem.Label
 						}
 					}
 				}
 			}
 		}
+
+		for _, v := range tr {
+			tgs = append(tgs, lbdiscovery.TargetGroup{Targets: v, Labels: ttt[v[0]]})
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tgs)
 	}
