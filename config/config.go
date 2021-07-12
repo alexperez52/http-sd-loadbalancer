@@ -43,7 +43,7 @@ func unmarshall(cfg *Config) error {
 }
 
 func Load() Config {
-	var cfg = Config{}
+	cfg := Config{}
 
 	if err := unmarshall(&cfg); err != nil {
 		fmt.Println(err)

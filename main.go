@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -16,62 +19,26 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var lb *loadbalancer.LoadBalancer
+var (
+	lb *loadbalancer.LoadBalancer
+)
 
-func main() {
-
-	// Create new disocvery manager
-	discoveryManager := lbdiscovery.NewManager()
-
-	// Load the ConfigMap
-	var cfg = config.Load()
-
-	collectors, err := collector.Get(context.Background(), cfg.LabelSelector)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// Obtain initial TargetGroups using service discovery
-	targetMapping, err := lbdiscovery.Get(discoveryManager, cfg)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// Format initial TargetGroups into list of targets
-	targetList := lbdiscovery.GetTargetList(targetMapping)
-	lb = loadbalancer.Init()
-
-	// Start cronjob to to run service dicsovery at fixed intervals (30s)
-	s := gocron.NewScheduler(time.UTC)
-	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
-
-	s.StartAsync()
-
-	lb.InitializeCollectors(collectors)
-	lb.UpdateTargetSet(targetList)
-	lb.RefreshJobs()
-
-	// Starting server
-	fmt.Println("Server started...")
+func router() *mux.Router {
 	router := mux.NewRouter()
-	router.HandleFunc("/jobs", DisplayAll).Methods("GET")
-	router.HandleFunc("/jobs/{job_id}/targets", DisplayCollectorMapping).Methods("GET")
-	http.ListenAndServe(":3030", router)
+	router.HandleFunc("/jobs", jobHandler).Methods("GET")
+	router.HandleFunc("/jobs/{job_id}/targets", targetHandler).Methods("GET")
+
+	return router
 }
 
-// Exposes all current jobs with their corresponding targets link
-func DisplayAll(w http.ResponseWriter, r *http.Request) {
-
+func jobHandler(w http.ResponseWriter, r *http.Request) {
 	displayData := loadbalancer.SetupDisplayData(lb)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(displayData)
 }
 
-// Exposes the scrape targets on the appropriate end points
-// If there is > 0 query params under the key 'collector_id' then it will only expose targets for that collector.
-// Otherwise it will jsut expose all collector's jobs
-func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
+func targetHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()["collector_id"]
 	if len(q) == 0 {
 		params := mux.Vars(r)
@@ -83,5 +50,56 @@ func DisplayCollectorMapping(w http.ResponseWriter, r *http.Request) {
 		tgs := loadbalancer.SetupCollectorData(lb, q)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tgs)
+	}
+}
+
+func main() {
+	// creates a new discovery manager
+	discoveryManager := lbdiscovery.NewManager()
+	cfg := config.Load()
+
+	// returns the list of collectors based on label selector
+	collectors, err := collector.Get(context.Background(), cfg.LabelSelector)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// returns the list of targets
+	targetMapping, err := lbdiscovery.Get(discoveryManager, cfg)
+	if err != nil {
+		fmt.Println(err)
+	}
+	targetList := lbdiscovery.GetTargetList(targetMapping)
+
+	// starts a cronjob to monitor every 30s
+	s := gocron.NewScheduler(time.UTC)
+	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
+	s.StartAsync()
+
+	lb = loadbalancer.Init()
+	lb.InitializeCollectors(collectors)
+	lb.UpdateTargetSet(targetList)
+	lb.RefreshJobs()
+
+	handler := router()
+	server := &http.Server{Addr: ":3030", Handler: handler}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Error in starting server: %+s\n", err)
+		}
+	}()
+	fmt.Println("Server started...")
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	<-c
+	fmt.Println("Server shutting down...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != http.ErrServerClosed {
+		fmt.Println(err)
 	}
 }

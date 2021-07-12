@@ -1,4 +1,4 @@
-package targetdiscovery
+package discovery
 
 import (
 	"context"
