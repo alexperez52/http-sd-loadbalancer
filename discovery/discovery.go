@@ -49,7 +49,7 @@ type TargetData struct {
 	Labels  model.LabelSet
 }
 
-func Run(discoveryManager *discovery.Manager) error {
+func run(discoveryManager *discovery.Manager) error {
 	if err := discoveryManager.Run(); err != nil {
 		return fmt.Errorf("discovery manager failed")
 	}
@@ -305,7 +305,7 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 		return nil, err
 	}
 
-	go Run(discoveryManager)
+	go run(discoveryManager)
 
 	targets, err := getTargets(discoveryManager)
 	if err != nil {

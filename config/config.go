@@ -16,7 +16,7 @@ var (
 )
 
 var (
-	defaultConfigFile string = "test.yaml"
+	defaultConfigFile string = "./testfolder/test.yaml"
 )
 
 type Config struct {

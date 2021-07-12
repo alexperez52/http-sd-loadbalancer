@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-co-op/gocron"
 	"github.com/http-sd-loadbalancer/collector"
 	"github.com/http-sd-loadbalancer/config"
@@ -20,7 +21,8 @@ import (
 )
 
 var (
-	lb *loadbalancer.LoadBalancer
+	lb     *loadbalancer.LoadBalancer
+	server *http.Server
 )
 
 func router() *mux.Router {
@@ -53,13 +55,13 @@ func targetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func main() {
+func distribute(ctx context.Context) {
 	// creates a new discovery manager
 	discoveryManager := lbdiscovery.NewManager()
 	cfg := config.Load()
 
 	// returns the list of collectors based on label selector
-	collectors, err := collector.Get(context.Background(), cfg.LabelSelector)
+	collectors, err := collector.Get(ctx, cfg.LabelSelector)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -71,7 +73,7 @@ func main() {
 	}
 	targetList := lbdiscovery.GetTargetList(targetMapping)
 
-	// starts a cronjob to monitor every 30s
+	// starts a cronjob to monitor sd targets every 30s
 	s := gocron.NewScheduler(time.UTC)
 	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
 	s.StartAsync()
@@ -82,7 +84,7 @@ func main() {
 	lb.RefreshJobs()
 
 	handler := router()
-	server := &http.Server{Addr: ":3030", Handler: handler}
+	server = &http.Server{Addr: ":3030", Handler: handler}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error in starting server: %+s\n", err)
@@ -96,10 +98,43 @@ func main() {
 	<-c
 	fmt.Println("Server shutting down...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != http.ErrServerClosed {
 		fmt.Println(err)
 	}
+}
+
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer watcher.Close()
+
+	err = watcher.Add("./testfolder")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		for {
+			select {
+			case event := <-watcher.Events:
+				switch event.Op {
+				case fsnotify.Write:
+					server.Shutdown(ctx)
+					distribute(ctx)
+				}
+			case err := <-watcher.Errors:
+				fmt.Println(err)
+			}
+		}
+	}()
+
+	distribute(ctx)
 }

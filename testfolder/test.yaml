@@ -26,4 +26,4 @@ config:
         - targets: ["servicex.domain:6000", "servicex.domain:6001"]
           labels:
             my: sxlabel
-            your: sxlabel
+            your: sxlabel1
