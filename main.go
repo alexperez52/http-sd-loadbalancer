@@ -56,9 +56,10 @@ func targetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func distribute(ctx context.Context) {
-	// creates a new discovery manager
-	discoveryManager := lbdiscovery.NewManager()
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	// returns the list of collectors based on label selector
 	collectors, err := collector.Get(ctx, cfg.LabelSelector)
@@ -66,21 +67,23 @@ func distribute(ctx context.Context) {
 		fmt.Println(err)
 	}
 
+	// creates a new discovery manager
+	discoveryManager := lbdiscovery.NewManager(ctx)
+
 	// returns the list of targets
-	targetMapping, err := lbdiscovery.Get(discoveryManager, cfg)
+	targets, err := lbdiscovery.Get(discoveryManager, cfg)
 	if err != nil {
 		fmt.Println(err)
 	}
-	targetList := lbdiscovery.GetTargetList(targetMapping)
 
 	// starts a cronjob to monitor sd targets every 30s
 	s := gocron.NewScheduler(time.UTC)
-	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targetList)
+	s.Every(30).Seconds().Do(lbdiscovery.Watch, discoveryManager, &targets)
 	s.StartAsync()
 
 	lb = loadbalancer.Init()
 	lb.InitializeCollectors(collectors)
-	lb.UpdateTargetSet(targetList)
+	lb.UpdateTargetSet(targets)
 	lb.RefreshJobs()
 
 	handler := router()
@@ -116,7 +119,7 @@ func main() {
 	}
 	defer watcher.Close()
 
-	err = watcher.Add("./testfolder")
+	err = watcher.Add("./conf")
 	if err != nil {
 		log.Fatal(err)
 	}

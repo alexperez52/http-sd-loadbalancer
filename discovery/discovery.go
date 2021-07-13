@@ -38,11 +38,6 @@ type TargetGroup struct {
 	Labels  model.LabelSet
 }
 
-type TargetMapping struct {
-	JobName     string
-	TargetGroup TargetGroup
-}
-
 type TargetData struct {
 	JobName string
 	Target  string
@@ -56,9 +51,9 @@ func run(discoveryManager *discovery.Manager) error {
 	return nil
 }
 
-func getTargets(discoveryManager *discovery.Manager) ([]TargetMapping, error) {
+func getTargets(discoveryManager *discovery.Manager) ([]TargetData, error) {
 	tsets := <-discoveryManager.SyncCh()
-	var targets = []TargetMapping{}
+	targets := []TargetData{}
 
 	for jobName, tgs := range tsets {
 		for _, target := range tgs {
@@ -77,19 +72,28 @@ func getTargets(discoveryManager *discovery.Manager) ([]TargetMapping, error) {
 				return nil, err
 			}
 
-			targets = append(targets, TargetMapping{JobName: jobName, TargetGroup: targetGroup})
+			targetsList := targetGroup.Targets
+			for _, target := range targetsList {
+				targets = append(targets, TargetData{JobName: jobName, Target: target, Labels: targetGroup.Labels})
+			}
 		}
 	}
 	return targets, nil
 }
 
-func NewManager() *discovery.Manager {
-	discoveryCtx, _ := context.WithCancel(context.Background())
-	discoveryManager := discovery.NewManager(discoveryCtx, log.NewNopLogger())
-	return discoveryManager
+func NewManager(ctx context.Context) *discovery.Manager {
+	return discovery.NewManager(ctx, log.NewNopLogger())
 }
 
-func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMapping, error) {
+func Watch(discoveryManager *discovery.Manager, targets *[]TargetData) {
+	var err error
+	*targets, err = getTargets(discoveryManager)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetData, error) {
 	discoveryCfg := make(map[string]discovery.Configs)
 
 	for _, scrapeConfig := range cfg.Config.ScrapeConfigs {
@@ -313,26 +317,4 @@ func Get(discoveryManager *discovery.Manager, cfg config.Config) ([]TargetMappin
 	}
 
 	return targets, nil
-}
-
-func GetTargetList(targetMapping []TargetMapping) []TargetData {
-	targetDataList := []TargetData{}
-
-	for _, targetsInfo := range targetMapping {
-		targetsList := targetsInfo.TargetGroup.Targets
-		for _, target := range targetsList {
-			targetDataList = append(targetDataList, TargetData{JobName: targetsInfo.JobName, Target: target, Labels: targetsInfo.TargetGroup.Labels})
-		}
-	}
-
-	return targetDataList
-}
-
-func Watch(discoveryManager *discovery.Manager, targetList *[]TargetData) {
-	targetMapping, err := getTargets(discoveryManager)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	*targetList = GetTargetList(targetMapping)
 }

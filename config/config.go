@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
@@ -16,7 +15,7 @@ var (
 )
 
 var (
-	defaultConfigFile string = "./testfolder/test.yaml"
+	defaultConfigFile string = "./conf/loadbalancer.yaml"
 )
 
 type Config struct {
@@ -29,8 +28,8 @@ type ScrapeConfig struct {
 	ScrapeConfigs []map[string]interface{} `yaml:"scrape_configs"`
 }
 
-func unmarshall(cfg *Config) error {
-	yamlFile, err := ioutil.ReadFile(defaultConfigFile)
+func unmarshall(cfg *Config, configFile string) error {
+	yamlFile, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return ErrInvalidLBFile
 	}
@@ -42,12 +41,16 @@ func unmarshall(cfg *Config) error {
 	return nil
 }
 
-func Load() Config {
+func Load(newConfigFile ...string) (Config, error) {
 	cfg := Config{}
-
-	if err := unmarshall(&cfg); err != nil {
-		fmt.Println(err)
+	configFile := defaultConfigFile
+	if len(newConfigFile) > 0 {
+		configFile = newConfigFile[0]
 	}
 
-	return cfg
+	if err := unmarshall(&cfg, configFile); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
 }

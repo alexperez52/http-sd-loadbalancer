@@ -3,18 +3,19 @@ package config
 import (
 	"testing"
 
+	"github.com/http-sd-loadbalancer/suite"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConfigLoad(t *testing.T) {
 	// prepare
 	cfg := Config{}
-	defaultConfigFile = "config_test.yaml"
-	expectedFileSDConfig := map[interface{}]interface{}{"files": []interface{}{"file_sd_test_1.yaml"}}
+	defaultConfigTestFile := suite.GetConfigTestFile()
+	expectedFileSDConfig := map[interface{}]interface{}{"files": []interface{}{"../suite/file_sd_test.yaml"}}
 	expectedStaticSDConfig := map[interface{}]interface{}{"targets": []interface{}{"prom.domain:9001", "prom.domain:9002", "prom.domain:9003"}}
 
 	// test
-	err := unmarshall(&cfg)
+	err := unmarshall(&cfg, defaultConfigTestFile)
 	actualFileSDConfig := cfg.Config.ScrapeConfigs[0]["file_sd_configs"].([]interface{})[0]
 	actulaStaticSDConfig := cfg.Config.ScrapeConfigs[0]["static_configs"].([]interface{})[0]
 
