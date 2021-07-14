@@ -113,6 +113,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// watcher to monitor file changes in ConfigMap
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		fmt.Println(err)
@@ -130,6 +131,7 @@ func main() {
 			case event := <-watcher.Events:
 				switch event.Op {
 				case fsnotify.Write:
+					fmt.Println("ConfigMap updated!")
 					server.Shutdown(ctx)
 					distribute(ctx)
 				}
