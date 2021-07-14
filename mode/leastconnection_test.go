@@ -1,4 +1,4 @@
-package loadbalancer_test
+package mode_test
 
 import (
 	"testing"

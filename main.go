@@ -15,7 +15,7 @@ import (
 	"github.com/http-sd-loadbalancer/collector"
 	"github.com/http-sd-loadbalancer/config"
 	lbdiscovery "github.com/http-sd-loadbalancer/discovery"
-	loadbalancer "github.com/http-sd-loadbalancer/loadbalancer"
+	loadbalancer "github.com/http-sd-loadbalancer/mode"
 
 	"github.com/gorilla/mux"
 )
