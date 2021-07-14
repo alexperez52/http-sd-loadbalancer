@@ -34,7 +34,7 @@ func router() *mux.Router {
 }
 
 func jobHandler(w http.ResponseWriter, r *http.Request) {
-	displayData := loadbalancer.SetupDisplayData(lb)
+	displayData := lb.Cache.DisplayJobMapping
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(displayData)
@@ -42,14 +42,14 @@ func jobHandler(w http.ResponseWriter, r *http.Request) {
 
 func targetHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()["collector_id"]
+	params := mux.Vars(r)
 	if len(q) == 0 {
-		params := mux.Vars(r)
-		targets := loadbalancer.SetupDisplayTargets(lb, params)
+		targets := lb.Cache.DisplayCollectorJson[params["job_id"]]
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(targets)
 
 	} else {
-		tgs := loadbalancer.SetupCollectorData(lb, q)
+		tgs := lb.Cache.DisplayTargetMapping[params["job_id"]+q[0]]
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tgs)
 	}

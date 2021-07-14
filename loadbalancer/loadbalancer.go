@@ -43,13 +43,19 @@ type TargetItem struct {
 	CollectorPtr *Collector
 }
 
+type DisplayCache struct {
+	DisplayJobs          map[string](map[string][]lbdiscovery.TargetGroup)
+	DisplayCollectorJson map[string](map[string]CollectorJson)
+	DisplayJobMapping    map[string]LinkLabel
+	DisplayTargetMapping map[string][]lbdiscovery.TargetGroup
+}
+
 type LoadBalancer struct {
 	TargetSet     map[string]lbdiscovery.TargetData
 	TargetMap     map[string]lbdiscovery.TargetData
 	CollectorMap  map[string]*Collector
-	DisplayData   map[string]LinkLabel
-	DisplayData2  map[string]CollectorJson
 	TargetItemMap map[string]*TargetItem
+	Cache         DisplayCache
 	NextCol       Next
 }
 
@@ -114,89 +120,81 @@ func (lb *LoadBalancer) AddUpdatedTargets() {
 	}
 }
 
-func SetupDisplayTargets(lb *LoadBalancer, p map[string]string) map[string]CollectorJson {
-	targets := make(map[string]CollectorJson)
+func (lb *LoadBalancer) GenerateCache() {
 	var compareMap = make(map[string][]TargetItem) // CollectorName+jobName -> TargetItem
 	for _, targetItem := range lb.TargetItemMap {
 		compareMap[targetItem.CollectorPtr.Name+targetItem.JobName] = append(compareMap[targetItem.CollectorPtr.Name+targetItem.JobName], *targetItem)
 	}
-	for i := range targets {
-		delete(targets, i)
+	lb.Cache = DisplayCache{DisplayJobs: make(map[string]map[string][]lbdiscovery.TargetGroup), DisplayCollectorJson: make(map[string](map[string]CollectorJson))}
+	for _, v := range lb.TargetItemMap {
+		lb.Cache.DisplayJobs[v.JobName] = make(map[string][]lbdiscovery.TargetGroup)
 	}
+	for _, v := range lb.TargetItemMap {
+		var jobsArr []TargetItem
+		jobsArr = append(jobsArr, compareMap[v.CollectorPtr.Name+v.JobName]...)
 
-	for _, job := range lb.TargetItemMap {
-		if job.JobName == p["job_id"] {
-			var jobsArr []TargetItem
-			jobsArr = append(jobsArr, compareMap[job.CollectorPtr.Name+job.JobName]...)
-
-			var targetGroupList []lbdiscovery.TargetGroup
-
-			targetItemSet := make(map[string][]TargetItem)
-			for _, m := range jobsArr {
-				targetItemSet[m.JobName+m.Label.String()] = append(targetItemSet[m.JobName+m.Label.String()], m)
+		var targetGroupList []lbdiscovery.TargetGroup
+		targetItemSet := make(map[string][]TargetItem)
+		for _, m := range jobsArr {
+			targetItemSet[m.JobName+m.Label.String()] = append(targetItemSet[m.JobName+m.Label.String()], m)
+		}
+		labelSet := make(map[string]model.LabelSet)
+		for _, targetItemList := range targetItemSet {
+			var targetArr []string
+			for _, targetItem := range targetItemList {
+				labelSet[targetItem.TargetUrl] = targetItem.Label
+				targetArr = append(targetArr, targetItem.TargetUrl)
 			}
-			labelSet := make(map[string]model.LabelSet)
-			for _, targetItemList := range targetItemSet {
-				var targetArr []string
-				for _, targetItem := range targetItemList {
-					labelSet[targetItem.TargetUrl] = targetItem.Label
-					targetArr = append(targetArr, targetItem.TargetUrl)
-				}
-				targetGroupList = append(targetGroupList, lbdiscovery.TargetGroup{Targets: targetArr, Labels: labelSet[targetArr[0]]})
+			targetGroupList = append(targetGroupList, lbdiscovery.TargetGroup{Targets: targetArr, Labels: labelSet[targetArr[0]]})
 
-			}
-			targets[job.CollectorPtr.Name] = CollectorJson{Link: "/jobs/" + job.JobName + "/targets" + "?collector_id=" + job.CollectorPtr.Name, Jobs: targetGroupList}
+		}
+		lb.Cache.DisplayJobs[v.JobName][v.CollectorPtr.Name] = targetGroupList
+	}
+}
+
+// TODO: Add mutex
+// UpdateCache gets called whenever RefreshJobs gets called
+func (lb *LoadBalancer) UpdateCache() {
+	lb.GenerateCache() // Create cached structure
+	// Create the display maps
+	lb.Cache.DisplayTargetMapping = make(map[string][]lbdiscovery.TargetGroup)
+	lb.Cache.DisplayJobMapping = make(map[string]LinkLabel)
+	for _, vv := range lb.TargetItemMap {
+		lb.Cache.DisplayCollectorJson[vv.JobName] = make(map[string]CollectorJson)
+	}
+	for k, v := range lb.Cache.DisplayJobs {
+		for kk, vv := range v {
+			lb.Cache.DisplayCollectorJson[k][kk] = CollectorJson{Link: "/jobs/" + k + "/targets" + "?collector_id=" + kk, Jobs: vv}
 		}
 	}
-	return targets
-}
-
-func SetupCollectorData(lb *LoadBalancer, q []string) []lbdiscovery.TargetGroup {
-	targets := []lbdiscovery.TargetGroup{}
-	var compareMap = make(map[string][]TargetItem) // CollectorName+jobName -> TargetItem
 	for _, targetItem := range lb.TargetItemMap {
-		compareMap[targetItem.CollectorPtr.Name+targetItem.JobName] = append(compareMap[targetItem.CollectorPtr.Name+targetItem.JobName], *targetItem)
+		lb.Cache.DisplayJobMapping[targetItem.JobName] = LinkLabel{targetItem.Link.Link}
 	}
-	targetMap := make(map[string][]string)
-	labelSet := make(map[string]model.LabelSet)
-	for _, collector := range lb.CollectorMap {
-		if collector.Name == q[0] {
-			for _, targetItemArr := range compareMap {
-				for _, targetItem := range targetItemArr {
-					if targetItem.CollectorPtr.Name == q[0] {
-						targetMap[targetItem.Label.String()] = append(targetMap[targetItem.Label.String()], targetItem.TargetUrl)
-						labelSet[targetItem.TargetUrl] = targetItem.Label
-					}
-				}
-			}
+
+	for k, v := range lb.Cache.DisplayJobs {
+		for kk, vv := range v {
+			lb.Cache.DisplayTargetMapping[k+kk] = vv
 		}
 	}
 
-	for _, v := range targetMap {
-		targets = append(targets, lbdiscovery.TargetGroup{Targets: v, Labels: labelSet[v[0]]})
-	}
-	return targets
 }
 
-func SetupDisplayData(lb *LoadBalancer) map[string]LinkLabel {
-	displayData := make(map[string]LinkLabel)
-	for _, targetItem := range lb.TargetItemMap {
-		displayData[targetItem.JobName] = LinkLabel{targetItem.Link.Link}
-	}
-	return displayData
-}
-
+// TODO: Add boolean flags to determine if any changes were made that should trigger RefreshJobs
+// RefreshJobs is a function that is called periodically - this will create a cached structure to hold data for consistency
+// when collectors perform GET operations
 func (lb *LoadBalancer) RefreshJobs() {
 	lb.RemoveOutdatedTargets()
 	lb.AddUpdatedTargets()
+	lb.UpdateCache()
 }
 
+// UpdateCache updates the DisplayMap so that mapping is consistent
+
 func Init() *LoadBalancer {
-	lb := LoadBalancer{TargetSet: make(map[string]lbdiscovery.TargetData),
+	lb := LoadBalancer{
+		TargetSet:     make(map[string]lbdiscovery.TargetData),
 		TargetMap:     make(map[string]lbdiscovery.TargetData),
 		CollectorMap:  make(map[string]*Collector),
-		DisplayData:   make(map[string]LinkLabel),
-		DisplayData2:  make(map[string]CollectorJson),
 		TargetItemMap: make(map[string]*TargetItem),
 		NextCol:       Next{}}
 	return &lb
